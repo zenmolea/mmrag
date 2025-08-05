@@ -54,16 +54,6 @@ inference_pipeline = InferencePipeline(
 print("所有管道初始化完成！")
 
 def process_single_video(video_path, question):
-    """
-    处理单个视频和问题
-    
-    Args:
-        video_path: 视频文件路径
-        question: 问题文本
-        
-    Returns:
-        str: 答案
-    """
     print(f"\n开始处理视频: {video_path}")
     print(f"问题: {question}")
     
@@ -135,7 +125,6 @@ def process_single_video(video_path, question):
         return f"处理失败: {e}"
 
 def main():
-    """主函数"""
     # 示例使用
     video_path = "/path/to/your/video.mp4"  # 替换为实际视频路径
     question = "How many people appear in the video? A. 1. B. 2. C. 3. D. 4."

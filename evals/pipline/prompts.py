@@ -1,7 +1,4 @@
-"""
-结构化Prompt模板文件
-包含所有用于推理的prompt模板
-"""
+
 
 # 检索请求prompt模板
 RETRIEVE_REQUEST_PROMPT = """Question: {question}
@@ -143,16 +140,6 @@ PROMPT_TEMPLATES = {
 }
 
 def get_prompt(template_name: str, **kwargs) -> str:
-    """
-    获取格式化的prompt
-    
-    Args:
-        template_name: 模板名称
-        **kwargs: 格式化参数
-        
-    Returns:
-        str: 格式化后的prompt
-    """
     if template_name not in PROMPT_TEMPLATES:
         raise ValueError(f"Unknown prompt template: {template_name}")
     
@@ -160,10 +147,4 @@ def get_prompt(template_name: str, **kwargs) -> str:
     return template.format(**kwargs)
 
 def get_all_prompts() -> dict:
-    """
-    获取所有prompt模板
-    
-    Returns:
-        dict: 所有prompt模板的字典
-    """
     return PROMPT_TEMPLATES.copy() 
