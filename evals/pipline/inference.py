@@ -15,10 +15,28 @@ from .prompts import get_prompt, get_all_prompts
 
 class InferencePipeline:
     def __init__(self, 
-                 model_name="LLaVA-Video-7B-Qwen2",
+                                   # 多模态大模型选择:
+                  # - "LLaVA-Video-7B-Qwen2": LLaVA Video模型，基于Qwen2
+                  # - "LongVA-7B": LongVA模型，支持长视频理解
+                  # - "LLaVA-1.5-7B": 标准LLaVA模型，支持图像理解
+                  # - "Qwen2-VL-7B": Qwen2视觉语言模型
+                  # - "Qwen2.5-VL-7B": Qwen2.5视觉语言模型，更强的视觉理解能力
+                  model_name="LLaVA-Video-7B-Qwen2",
+                 
+                 # CLIP模型选择:
+                 # - "clip-vit-large-patch14-336": 标准CLIP模型
+                 # - "clip-vit-base-patch32": 基础CLIP模型
+                 # - "clip-vit-large-patch14": 大尺寸CLIP模型
                  clip_model_name="clip-vit-large-patch14-336",
+                 
                  device="cuda",
+                 
+                 # 对话模板选择:
+                 # - "qwen_1_5": Qwen2对话模板
+                 # - "llava_v1": LLaVA v1对话模板
+                 # - "llava_v1_5": LLaVA v1.5对话模板
                  conv_template="qwen_1_5",
+                 
                  rag_threshold=0.3,
                  clip_threshold=0.3,
                  beta=3.0):
@@ -27,16 +45,35 @@ class InferencePipeline:
         self.clip_threshold = clip_threshold
         self.beta = beta
         self.conv_template = conv_template
+        self.model_name = model_name  # 保存模型名称用于后续判断
+        
+        # 加载多模态大模型
+         # 根据不同的模型类型选择不同的模型架构:
+         # - LLaVA-Video系列: 使用 "llava_qwen" 架构
+         # - LongVA系列: 使用 "longva" 架构  
+         # - 标准LLaVA系列: 使用 "llava" 架构
+         # - Qwen2-VL系列: 使用 "qwen2_vl" 架构
+         # - Qwen2.5-VL系列: 使用 "qwen2_5_vl" 架构
+        model_arch = "llava_qwen"  # 默认架构，可根据model_name动态调整
+        if "LongVA" in model_name:
+             model_arch = "longva"
+        elif "LLaVA-1.5" in model_name or "LLaVA-1.6" in model_name:
+             model_arch = "llava"
+        elif "Qwen2.5-VL" in model_name:
+             model_arch = "qwen2_5_vl"
+        elif "Qwen2-VL" in model_name:
+             model_arch = "qwen2_vl"
         
         self.tokenizer, self.model, self.image_processor, self.max_length = load_pretrained_model(
             model_name, 
             None, 
-            "llava_qwen", 
+            model_arch,  # 根据模型类型选择架构
             torch_dtype="bfloat16", 
             device_map="auto"
         )
         self.model.eval()
         
+        # 加载CLIP模型用于视觉特征提取和相似度计算
         self.clip_model = CLIPModel.from_pretrained(
             clip_model_name, 
             torch_dtype=torch.float16, 
@@ -51,6 +88,15 @@ class InferencePipeline:
     def llava_inference(self, qs: str, video: Optional[torch.Tensor] = None, 
                        video_time: float = 0, frame_time: str = "", 
                        max_new_tokens: int = 4096) -> str:
+        """
+        多模态推理方法，支持不同模型的推理
+        
+        支持的模型类型:
+        - LLaVA-Video: 支持视频输入，使用modalities=["video"]
+        - LongVA: 支持长视频输入，使用modalities=["video"] 
+        - LLaVA-1.5: 支持图像输入，使用modalities=["image"]
+        - Qwen2-VL: 支持图像输入，使用modalities=["image"]
+        """
         try:
             if video is not None:
                 time_instruction = f"The video lasts for {video_time:.2f} seconds, and {len(video[0])} frames are uniformly sampled from it. These frames are located at {frame_time}.Please answer the following questions related to this video."
@@ -64,11 +110,19 @@ class InferencePipeline:
             prompt_question = conv.get_prompt()
             input_ids = tokenizer_image_token(prompt_question, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).to(self.device)
             
+                     # 根据模型类型选择输入模态
+         # LLaVA-Video和LongVA支持视频模态
+         # LLaVA-1.5、Qwen2-VL和Qwen2.5-VL支持图像模态
+            if "Video" in self.model_name or "LongVA" in self.model_name:
+                modality = ["video"]
+            else:
+                modality = ["image"]
+            
             if video is not None:
                 cont = self.model.generate(
                     input_ids,
                     images=video,
-                    modalities=["video"],
+                    modalities=modality,  # 动态选择模态
                     do_sample=False,
                     temperature=0,
                     max_new_tokens=max_new_tokens,
@@ -79,7 +133,7 @@ class InferencePipeline:
                 cont = self.model.generate(
                     input_ids,
                     images=video,
-                    modalities=["video"],
+                    modalities=modality,  # 动态选择模态
                     do_sample=False,
                     temperature=0,
                     max_new_tokens=max_new_tokens,
