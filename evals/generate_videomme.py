@@ -63,14 +63,23 @@ for item in tqdm(mme_data[index:], desc="Processing items"):
     if USE_ASR: 
         asr_text_path = os.path.join("restore/audio", os.path.basename(video_path).split(".")[0] + ".txt")
         if os.path.exists(asr_text_path): 
+            # 读取带帧信息的ASR数据
+            asr_docs_total = []
             with open(asr_text_path, 'r', encoding='utf-8') as f: 
-                asr_docs_total = f.readlines() 
+                for line in f:
+                    try:
+                        doc = json.loads(line.strip())
+                        asr_docs_total.append(doc)
+                    except json.JSONDecodeError:
+                        # 如果是旧格式，转换为新格式
+                        asr_docs_total.append({'text': line.strip(), 'frame_indices': []})
         else: 
-            asr_docs_total = asr_pipeline.process_video_asr(video_path) 
+            # 使用新的带帧信息的ASR处理
+            asr_docs_total = asr_pipeline.get_asr_docs_with_frame_info(video_path, None, max_frames_num)
 
     ocr_docs_total = []
     if USE_OCR:
-        ocr_docs_total = ocr_pipeline.get_ocr_docs(frames)
+        ocr_docs_total = ocr_pipeline.get_ocr_docs_with_frame_info(frames)
 
     processed_questions = inference_pipeline.batch_process_questions(
         questions_data=content['questions'],

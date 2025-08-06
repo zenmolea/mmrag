@@ -193,21 +193,78 @@ class InferencePipeline:
     def build_final_question(self, question: str, options: List[str], 
                            det_docs: List[str], det_top_idx: List[int],
                            asr_docs: List[str], ocr_docs: List[str],
-                           max_frames_num: int) -> str:
+                           max_frames_num: int, 
+                           asr_docs_total: List[Dict] = None, 
+                           ocr_docs_total: List[Dict] = None) -> str:
         qs = ""
         
-        if det_docs:
-            for i, info in enumerate(det_docs):
-                if info:
-                    qs += f"Frame {str(det_top_idx[i]+1)}: {info}\n"
-            if qs:
-                qs = f"\nVideo have {str(max_frames_num)} frames in total, the detected objects' information in specific frames: " + qs
+        # 收集所有相关帧索引
+        all_frame_indices = set()
+        if det_top_idx:
+            all_frame_indices.update(det_top_idx)
         
-        if asr_docs:
-            qs += "\nVideo Automatic Speech Recognition information (given in chronological order of the video): " + " ".join(asr_docs)
+        # 从检索到的OCR内容中收集帧索引
+        if ocr_docs_total and ocr_docs:
+            for doc in ocr_docs_total:
+                if doc.get('text') in ocr_docs:
+                    frame_idx = doc.get('frame_index')
+                    if frame_idx is not None:
+                        all_frame_indices.add(frame_idx)
         
-        if ocr_docs:
-            qs += "\nVideo OCR information (given in chronological order of the video): " + "; ".join(ocr_docs)
+        # 从检索到的ASR内容中收集帧索引
+        if asr_docs_total and asr_docs:
+            for doc in asr_docs_total:
+                if doc.get('text') in asr_docs:
+                    frame_indices = doc.get('frame_indices', [])
+                    all_frame_indices.update(frame_indices)
+        
+        # 对帧索引排序
+        sorted_frame_indices = sorted(list(all_frame_indices))
+        
+        if sorted_frame_indices:
+            qs += f"\nVideo have {str(max_frames_num)} frames in total. Synchronized multimodal information by time segments:\n"
+            
+            # 按帧索引组织多模态信息
+            for frame_idx in sorted_frame_indices:
+                frame_info = f"Frame {frame_idx + 1}: "
+                modalities = []
+                
+                # 添加DET信息
+                if frame_idx in det_top_idx:
+                    det_idx = det_top_idx.index(frame_idx)
+                    if det_idx < len(det_docs) and det_docs[det_idx]:
+                        modalities.append(f"DET: {det_docs[det_idx]}")
+                
+                # 添加OCR信息
+                if ocr_docs_total:
+                    for doc in ocr_docs_total:
+                        if doc.get('frame_index') == frame_idx and doc.get('text') in ocr_docs:
+                            modalities.append(f"OCR: {doc['text']}")
+                
+                # 添加ASR信息
+                if asr_docs_total:
+                    for doc in asr_docs_total:
+                        frame_indices = doc.get('frame_indices', [])
+                        if frame_idx in frame_indices and doc.get('text') in asr_docs:
+                            modalities.append(f"ASR: {doc['text']}")
+                
+                if modalities:
+                    frame_info += " | ".join(modalities)
+                    qs += frame_info + "\n"
+        else:
+            # 如果没有找到相关帧，使用原来的格式
+            if det_docs:
+                for i, info in enumerate(det_docs):
+                    if info:
+                        qs += f"Frame {str(det_top_idx[i]+1)}: {info}\n"
+                if qs:
+                    qs = f"\nVideo have {str(max_frames_num)} frames in total, the detected objects' information in specific frames: " + qs
+            
+            if asr_docs:
+                qs += "\nVideo Automatic Speech Recognition information (given in chronological order of the video): " + " ".join(asr_docs)
+            
+            if ocr_docs:
+                qs += "\nVideo OCR information (given in chronological order of the video): " + "; ".join(ocr_docs)
         
         final_prompt = get_prompt("final_answer",
             question=question,
@@ -219,8 +276,8 @@ class InferencePipeline:
     
     def process_question(self, question: str, options: List[str], 
                         video: torch.Tensor, video_time: float, frame_time: str,
-                        frames: np.ndarray, asr_docs_total: List[str], 
-                        ocr_docs_total: List[str], video_pipeline,
+                        frames: np.ndarray, asr_docs_total: List[Dict], 
+                        ocr_docs_total: List[Dict], video_pipeline,
                         file_name: str, max_frames_num: int) -> str:
         try:
             retrieve_request = self.get_retrieve_request(question, options)
@@ -260,19 +317,65 @@ class InferencePipeline:
             
             ocr_docs = []
             if ocr_docs_total:
-                ocr_docs = self.retrieve_ocr_docs(
-                    ocr_docs_total, query, retrieve_request.get("DET")
-                )
+                # 将带帧信息的OCR文档转换为纯文本列表进行检索
+                ocr_texts = [doc['text'] for doc in ocr_docs_total if doc.get('text')]
+                ocr_docs = self.retrieve_ocr_docs(ocr_texts, query, retrieve_request.get("DET"))
             
             asr_docs = []
             if asr_docs_total:
-                asr_docs = self.retrieve_asr_docs(
-                    asr_docs_total, query, retrieve_request.get("ASR")
-                )
+                # 将带帧信息的ASR文档转换为纯文本列表进行检索
+                asr_texts = [doc['text'] for doc in asr_docs_total if doc.get('text')]
+                asr_docs = self.retrieve_asr_docs(asr_texts, query, retrieve_request.get("ASR"))
             
+            # 收集所有模态找到的内容对应的帧索引
+            all_frame_indices = set()
+            
+            # 添加DET模态的帧索引
+            if det_top_idx:
+                all_frame_indices.update(det_top_idx)
+            
+            # 添加OCR模态的帧索引
+            if ocr_docs_total:
+                for doc in ocr_docs_total:
+                    if doc.get('text') in ocr_docs:  # 只考虑检索到的OCR内容
+                        frame_idx = doc.get('frame_index')
+                        if frame_idx is not None:
+                            all_frame_indices.add(frame_idx)
+            
+            # 添加ASR模态的帧索引
+            if asr_docs_total:
+                for doc in asr_docs_total:
+                    if doc.get('text') in asr_docs:  # 只考虑检索到的ASR内容
+                        frame_indices = doc.get('frame_indices', [])
+                        all_frame_indices.update(frame_indices)
+            
+            # 对帧索引去重并排序
+            unique_frame_indices = sorted(list(all_frame_indices))
+            
+            # 根据去重后的帧索引重新收集对应的内容
+            if unique_frame_indices:
+                # 重新收集OCR内容
+                synchronized_ocr = []
+                for doc in ocr_docs_total:
+                    if doc.get('frame_index') in unique_frame_indices and doc.get('text'):
+                        synchronized_ocr.append(doc['text'])
+                if synchronized_ocr:
+                    ocr_docs = synchronized_ocr
+                
+                # 重新收集ASR内容
+                synchronized_asr = []
+                for doc in asr_docs_total:
+                    frame_indices = doc.get('frame_indices', [])
+                    if any(frame_idx in unique_frame_indices for frame_idx in frame_indices) and doc.get('text'):
+                        synchronized_asr.append(doc['text'])
+                if synchronized_asr:
+                    asr_docs = synchronized_asr
+            
+
             final_question = self.build_final_question(
                 question, options, det_docs, det_top_idx, 
-                asr_docs, ocr_docs, max_frames_num
+                asr_docs, ocr_docs, max_frames_num,
+                asr_docs_total, ocr_docs_total
             )
             
             answer = self.llava_inference(
@@ -287,8 +390,8 @@ class InferencePipeline:
     
     def batch_process_questions(self, questions_data: List[Dict], 
                               video: torch.Tensor, video_time: float, frame_time: str,
-                              frames: np.ndarray, asr_docs_total: List[str], 
-                              ocr_docs_total: List[str], video_pipeline,
+                              frames: np.ndarray, asr_docs_total: List[Dict], 
+                              ocr_docs_total: List[Dict], video_pipeline,
                               file_name: str, max_frames_num: int) -> List[Dict]:
         results = []
         
@@ -306,3 +409,5 @@ class InferencePipeline:
             results.append(question_data)
         
         return results
+
+

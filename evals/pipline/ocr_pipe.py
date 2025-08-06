@@ -2,6 +2,7 @@ import os
 import easyocr
 import numpy as np
 from PIL import Image
+import json
 
 class OCRPipeline:
     def __init__(self, languages=['en'], confidence_threshold=0.5):
@@ -28,7 +29,38 @@ class OCRPipeline:
             print(f"单帧OCR处理失败: {e}")
             return ""
     
+    def get_ocr_docs_with_frame_info(self, frames):
+        """获取OCR文档，包含帧信息"""
+        ocr_docs_with_frames = []
+        
+        try:
+            for frame_idx, img in enumerate(frames):
+                ocr_results = self.reader.readtext(img)
+                det_info = ""
+                
+                for result in ocr_results:
+                    text = result[1]
+                    confidence = result[2]
+                    
+                    if confidence > self.confidence_threshold:
+                        det_info += f"{text}; "
+                
+                if det_info.strip():
+                    ocr_doc = {
+                        'text': det_info.strip(),
+                        'frame_index': frame_idx,
+                        'confidence': confidence if ocr_results else 0.0
+                    }
+                    ocr_docs_with_frames.append(ocr_doc)
+            
+            return ocr_docs_with_frames
+            
+        except Exception as e:
+            print(f"OCR处理失败: {e}")
+            return []
+    
     def get_ocr_docs(self, frames, text_set=None):
+        """保持向后兼容的原始方法"""
         if text_set is None:
             text_set = []
         
@@ -58,11 +90,12 @@ class OCRPipeline:
     
     def process_frames_ocr(self, frames, output_dir=None, save_frames=False):
         try:
-            ocr_docs = self.get_ocr_docs(frames)
+            # 获取带帧信息的OCR文档
+            ocr_docs_with_frames = self.get_ocr_docs_with_frame_info(frames)
             
             total_frames = len(frames)
-            frames_with_text = len(ocr_docs)
-            total_text_segments = sum(len(doc.split(';')) for doc in ocr_docs if doc)
+            frames_with_text = len(ocr_docs_with_frames)
+            total_text_segments = sum(len(doc['text'].split(';')) for doc in ocr_docs_with_frames if doc['text'])
             
             frame_paths = []
             if save_frames and output_dir:
@@ -74,17 +107,17 @@ class OCRPipeline:
                     frame_paths.append(frame_path)
             
             ocr_output_path = None
-            if output_dir and ocr_docs:
+            if output_dir and ocr_docs_with_frames:
                 ocr_output_path = os.path.join(output_dir, "ocr_results.txt")
                 try:
                     with open(ocr_output_path, 'w', encoding='utf-8') as f:
-                        for i, doc in enumerate(ocr_docs):
-                            f.write(f"Frame {i}: {doc}\n")
+                        for doc in ocr_docs_with_frames:
+                            f.write(json.dumps(doc, ensure_ascii=False) + '\n')
                 except Exception as e:
                     print(f"保存OCR结果失败: {e}")
             
             return {
-                'ocr_docs': ocr_docs,
+                'ocr_docs': ocr_docs_with_frames,
                 'frame_paths': frame_paths,
                 'ocr_output_path': ocr_output_path,
                 'stats': {

@@ -10,6 +10,7 @@ tqdm>=4.60.0
 # 视频处理
 decord>=0.6.0
 ffmpeg-python>=0.2.0
+opencv-python>=4.5.0
 
 # AI模型和工具
 transformers>=4.30.0
