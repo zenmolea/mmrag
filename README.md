@@ -10,7 +10,6 @@ mmrag/
 ├── README.md                    # 项目说明文档
 ├── requirements.txt             # 依赖包列表
 ├── setup_environment.py         # 环境配置脚本
-├── test_pipeline.ipynb          # 测试notebook
 ├── evals/
 │   ├── generate_videomme.py     # 主控制文件
 │   ├── videomme_json_file.json  # 数据文件
@@ -77,11 +76,21 @@ python -m pip install -e .
 cd ..
 ```
 
+6. **复制项目文件到相应目录**
+```bash
+# 将vidrag_pipeline下的所有文件复制到LLaVA-NeXT根目录
+cp -r vidrag_pipeline/* LLaVA-NeXT/
+
+# 将ape_tools下的所有文件复制到APE的demo目录
+cp -r ape_tools/* APE/demo/
+```
+
 ### 运行示例
 
 1. **启动APE服务**
 ```bash
 cd APE/demo
+# 运行APE服务（ape_tools目录下的文件已复制到此处）
 python ape_service.py
 ```
 
@@ -89,11 +98,6 @@ python ape_service.py
 ```bash
 cd evals
 python generate_videomme.py
-```
-
-3. **运行测试notebook**
-```bash
-jupyter notebook test_pipeline.ipynb
 ```
 
 
