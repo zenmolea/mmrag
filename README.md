@@ -62,7 +62,7 @@ pip install -r requirements.txt
 
 4. **安装LLaVA-NeXT**
 ```bash
-git clone https://github.com/LLaVA-VL/LLaVA-NeXT
+git clone https://github.com/LLaVA-VL/LLaVA-NeXT.git
 cd LLaVA-NeXT
 pip install -e ".[train]"
 cd ..
@@ -70,7 +70,7 @@ cd ..
 
 5. **安装APE (用于目标检测)**
 ```bash
-git clone https://github.com/shenyunhang/APE
+git clone https://github.com/shenyunhang/APE.git
 cd APE
 pip install -r requirements.txt
 python -m pip install -e .
